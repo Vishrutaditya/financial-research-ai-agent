@@ -1,0 +1,8 @@
+streamlit
+yfinance
+pandas
+plotly
+google-generativeai
+langchain
+newsapi-python
+vaderSentiment
