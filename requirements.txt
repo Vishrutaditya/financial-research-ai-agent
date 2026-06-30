@@ -1,6 +1,5 @@
 streamlit
 yfinance
-newsapi-python
 pandas
 plotly
 google-generativeai
