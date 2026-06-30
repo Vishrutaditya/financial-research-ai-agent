@@ -1,0 +1,14 @@
+-[ ] Create stock analysis prompt
+-[ ] Generate AI response
+-[ ] Fetch stock price
+-[ ] Fetch historical data
+-[ ] Calculate RSI
+-[ ] Calculate Moving Average
+-[ ] Create SQLite database
+-[ ] Create watchlist table
+-[ ] Create query history table
+-[ ] Connect database to app
+-[ ] Create dashboard UI
+-[ ] Add stock metrics
+-[ ] Add Plotly chart
+-[ ] Improve layout
