@@ -1,6 +1,6 @@
 from newsapi import NewsApiClient
 
-newsapi = NewsApiClient(api_key="00463fe38db44095a43420b31d9dd499")
+newsapi = NewsApiClient(api_key="YOUR_NEWSAPI_KEY")  # Replace with your actual NewsAPI key
 
 news = newsapi.get_everything(
     q="Tata Consultancy Services",
