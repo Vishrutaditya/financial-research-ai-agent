@@ -1,4 +1,5 @@
 from newsapi import NewsApiClient
+from utils.config import NEWS_API_KEY
 
 newsapi = NewsApiClient(api_key="YOUR_NEWSAPI_KEY")  # Replace with your actual NewsAPI key
 
