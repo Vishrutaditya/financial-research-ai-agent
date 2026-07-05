@@ -1,7 +1,7 @@
 import google.generativeai as genai
 from utils.config import GEMINI_API_KEY
 
-# Configure the SDK with your secure API key
+# Configure the Gemini API key for the Google Generative AI service
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
@@ -13,7 +13,7 @@ def get_ai_market_insight(company_name, sector, industry):
         return "AI Insight unavailable: GEMINI_API_KEY is not configured in your .env file."
         
     try:
-        # Utilizing the lightning-fast, cost-effective gemini-2.5-flash model
+        # Utilizing the gemini-2.5-flash model
         model = genai.GenerativeModel("gemini-2.5-flash")
         
         prompt = f"""
