@@ -17,10 +17,17 @@ def get_ai_market_insight(company_name, sector, industry):
         model = genai.GenerativeModel("gemini-2.5-flash")
         
         prompt = f"""
-        Provide a concise, professional 2-sentence market insight for {company_name}, 
-        operating in the {sector} sector ({industry} industry). 
-        Highlight its core industry position or a major current theme in this business sector.
-        Keep it punchy, corporate, and tailored for investors. Tell whether to buy or sell, and why, in a single sentence. Avoid generic statements.
+        You are an expert financial analyst. Analyze the following company profile:
+            Company: {company_name}
+            Sector: {sector}
+            Industry: {industry}
+
+            CRITICAL VALIDATION STEP: 
+            If the company name is a placeholder, a generic ticker symbol, or if the sector/industry values are missing or "N/A", do not generate a fake analysis. Instead, output exactly this message: "Market insights are unavailable because a valid company profile could not be identified. Please verify the stock ticker and try again."
+
+            IF THE COMPANY IS VALID:
+            1. Provide a concise, professional 2-sentence strategic market insight highlighting its core industry positioning or a major macroeconomic theme impacting its business sector. 
+            2. Conclude with a single, distinct sentence evaluating whether current structural trends lean toward a technical 'Buy' or 'Sell/Hold' posture based purely on sector tailwinds, explicitly stating the core justification. Avoid generic filler language; keep it punchy, corporate, and tailored for investors.            
         """
         
         response = model.generate_content(prompt)
