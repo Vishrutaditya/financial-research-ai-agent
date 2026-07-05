@@ -11,10 +11,11 @@ def get_stock_info(symbol):
 
 def get_historical_data(symbol, period="6mo"):
     """
-    Returns historical stock prices.
+    Fetches historical price data from Yahoo Finance for a given ticker symbol.
     """
-    ticker = yf.Ticker(symbol)
-    return ticker.history(period=period)
+    stock = yf.Ticker(symbol)
+    hist = stock.history(period=period)
+    return hist
 
 
 def get_company_info(symbol):
@@ -23,11 +24,15 @@ def get_company_info(symbol):
     """
     ticker = yf.Ticker(symbol)
     info = ticker.info
-
-    return {
+    company_data = {
         "name": info.get("longName"),
         "sector": info.get("sector"),
         "industry": info.get("industry"),
+        "website": info.get("website"),
         "market_cap": info.get("marketCap"),
-        "website": info.get("website")
-    }
+        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+        "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
+        "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
+        "dividend_yield": info.get("dividendYield"),
+}
+    return company_data
