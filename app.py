@@ -1,5 +1,6 @@
 import streamlit as st
 from services.stock_data import get_stock_info, get_historical_data, get_company_info
+from services.ai_service import get_ai_market_insight
 
 st.title("Indian Stock Research Assistant")
 
@@ -37,7 +38,7 @@ if st.button("Analyze"):
             # Sub-row of metrics for Market Cap and Dividends
             col4, col5 = st.columns(2)
             with col4:
-                # Format Market Cap cleanly if it's a large integer
+                # Format Market Cap cleanly
                 mkt_cap = company.get('market_cap', 'N/A')
                 if isinstance(mkt_cap, (int, float)):
                     st.metric(label="Market Cap", value=f"₹{mkt_cap:,.0f}")
@@ -52,12 +53,26 @@ if st.button("Analyze"):
                     st.metric(label="Dividend Yield", value=div_yield)
             
             # Professional Profile Information Markdown Section
-            st.markdown("### 🏢 Corporate Profile")
+            st.markdown("### Corporate Profile")
+            st.write(f"**Company Name:** {company.get('name', stock_symbol.upper())}")            
             st.write(f"**Sector:** {company.get('sector', 'N/A')}")
             st.write(f"**Industry:** {company.get('industry', 'N/A')}")
             st.write(f"**Website:** [Visit Website]({company.get('website', '#')})")
             
-            # --- PHASE 2: PLOTLY CHART IMPLEMENTATION ---
+            # --- AI INTEGRATION ---
+            st.markdown("### GenAI Market Insights")
+            
+            with st.spinner("Consulting Gemini AI for industry insights..."):
+                # Pass the fresh data fields directly to the AI engine
+                ai_insight = get_ai_market_insight(
+                    company_name=company.get('name', stock_symbol.upper()),
+                    sector=company.get('sector', 'N/A'),
+                    industry=company.get('industry', 'N/A')
+                )
+                # Display the response inside a professional informational callout box
+                st.info(ai_insight)
+                
+            #  PLOTLY CHART IMPLEMENTATION ---
             import plotly.graph_objects as go
             
             # Formulate the correct NSE ticker format
@@ -87,7 +102,6 @@ if st.button("Analyze"):
                     margin=dict(l=20, r=20, t=40, b=20)
                 )
                 
-                # Render the chart using the modern 'stretch' format to fix the deprecation warning
                 st.plotly_chart(fig, width='stretch')
             else:
                 st.warning("No historical pricing data available for this symbol.")
