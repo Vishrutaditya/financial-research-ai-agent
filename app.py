@@ -1,6 +1,7 @@
 import streamlit as st
 from services.stock_data import get_stock_info, get_historical_data, get_company_info
 from services.ai_service import get_ai_market_insight
+from services.news_service import get_company_news
 
 st.title("Indian Stock Research Assistant")
 
@@ -71,6 +72,22 @@ if st.button("Analyze"):
                         industry=company.get('industry', 'N/A')
                     )
                     st.info(ai_insight)
+
+
+                    st.markdown("### 📰 Latest News")
+
+                    articles = get_company_news(company.get('name', stock_symbol.upper()))
+
+                    if articles:
+                        for article in articles:
+                            st.write(f"**Title:** {article['title']}")
+                            st.write(f"**Source:** {article['source']['name']}")
+                            st.write(f"**Published:** {article['publishedAt']}")
+                            st.write(f"🔗 {article['url']}")
+                            st.divider()
+                    else:
+                        st.warning("No news found for this company.")
+
                     
                 #  PLOTLY CHART IMPLEMENTATION
                 import plotly.graph_objects as go
