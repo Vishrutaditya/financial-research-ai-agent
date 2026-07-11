@@ -1,24 +1,22 @@
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+# Initialize VADER Sentiment Analyzer
 analyzer = SentimentIntensityAnalyzer()
 
-texts = [
-    "TCS reports excellent quarterly profits.",
-    "TCS faces heavy losses this quarter.",
-    "TCS announced a new office."
-]
 
-for text in texts:
+def analyze_sentiment(text):
+    """
+    Analyze the sentiment of a news article.
+    Returns Positive, Negative, or Neutral.
+    """
+
     score = analyzer.polarity_scores(text)
 
-    print("\nNews:", text)
-    print("Score:", score)
-
     if score["compound"] >= 0.05:
-        print("Positive ✅")
+        return "Positive ✅"
 
     elif score["compound"] <= -0.05:
-        print("Negative ❌")
+        return "Negative ❌"
 
     else:
-        print("Neutral ➖")
+        return "Neutral 😐"

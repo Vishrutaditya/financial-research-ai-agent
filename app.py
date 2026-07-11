@@ -2,6 +2,7 @@ import streamlit as st
 from services.stock_data import get_stock_info, get_historical_data, get_company_info
 from services.ai_service import get_ai_market_insight
 from services.news_service import get_company_news
+from services.sentiment_service import analyze_sentiment
 
 st.title("Indian Stock Research Assistant")
 
@@ -80,7 +81,10 @@ if st.button("Analyze"):
 
                     if articles:
                         for article in articles:
+                            sentiment = analyze_sentiment(article["title"])
+                            
                             st.write(f"**Title:** {article['title']}")
+                            st.write(f"**Sentiment:** {sentiment}")
                             st.write(f"**Source:** {article['source']['name']}")
                             st.write(f"**Published:** {article['publishedAt']}")
                             st.write(f"🔗 {article['url']}")
