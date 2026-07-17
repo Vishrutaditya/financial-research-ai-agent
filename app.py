@@ -121,6 +121,19 @@ if st.button("Analyze"):
                     st.plotly_chart(fig, width='stretch')
                 else:
                     st.warning("No historical pricing data available for this symbol.")
+                
+
+                # --- TECHNICAL INDICATORS ---
+                st.markdown("### 📊 Technical Indicators")
+                from services.calculations import add_technical_indicators, get_latest_signal
+
+                if not hist.empty:
+                    hist = add_technical_indicators(hist)
+                    signal = get_latest_signal(hist)
+                    st.metric("RSI (14)", signal["rsi"], signal["rsi_signal"])
+                    fig.add_trace(go.Scatter(x=hist.index, y=hist["SMA_20"], name="SMA 20"))
+                    fig.add_trace(go.Scatter(x=hist.index, y=hist["EMA_20"], name="EMA 20"))
+
                     
         except Exception as e:
             st.error(f"An unexpected error occurred. Error details: {e}")
