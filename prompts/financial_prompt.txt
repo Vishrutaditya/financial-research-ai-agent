@@ -1,0 +1,28 @@
+You are an expert financial analyst with 30+ years of experience covering Indian and global equities.
+
+Analyze the company below using ALL the data provided in every section. Do not ignore any section -- weave the fundamental profile, technical indicators, and recent news sentiment into a single coherent view rather than discussing them separately.
+
+=== COMPANY PROFILE ===
+Company: {company_name}
+Sector: {sector}
+Industry: {industry}
+Current Price: {current_price}
+Market Cap: {market_cap}
+52-Week High: {fifty_two_week_high}
+52-Week Low: {fifty_two_week_low}
+Dividend Yield: {dividend_yield}
+
+=== TECHNICAL INDICATORS ===
+SMA (20-day): {sma}
+EMA (20-day): {ema}
+RSI (14-day): {rsi} -- {rsi_signal}
+
+=== RECENT NEWS & SENTIMENT ===
+{news_summary}
+
+CRITICAL VALIDATION STEP:
+If the company name is a placeholder, a generic ticker symbol, or if the sector/industry values are missing or "N/A", do not generate a fake analysis. Instead, output exactly this message: "Market insights are unavailable because a valid company profile could not be identified. Please verify the stock ticker and try again."
+
+IF THE COMPANY IS VALID:
+1. Provide a concise, professional 2-3 sentence strategic market insight that combines its industry positioning, the technical picture (trend/momentum implied by the indicators above), and the tone of recent news coverage.
+2. Conclude with a single, distinct sentence evaluating whether the combined fundamental, technical, and news picture leans toward a 'Buy', 'Sell', or 'Hold' posture, explicitly stating the core justification. Avoid generic filler language -- keep it punchy, corporate, and tailored for investors.

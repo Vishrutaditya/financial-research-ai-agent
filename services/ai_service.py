@@ -1,37 +1,83 @@
-import google.generativeai as genai
+"""
+services/ai_service.py
+
+Generates the GenAI market insight. Unlike the original version, this
+consumes a single `context` dict assembled by app.py from every service
+(company profile, technical indicators, news + sentiment) so the model
+reasons over the full research picture instead of just sector/industry.
+"""
+
+from pathlib import Path
+
+from google import genai
+
 from utils.config import GEMINI_API_KEY
+from utils.helpers import safe_get
 
-# Configure the Gemini API key for the Google Generative AI service
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# NOTE: this uses the `google-genai` package (from google import genai), not
+# the old `google-generativeai` package (import google.generativeai as genai).
+# The latter reached end-of-life -- no more bug/security fixes -- so if your
+# requirements.txt still has google-generativeai, swap it for google-genai.
+_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-def get_ai_market_insight(company_name, sector, industry):
-    """
-    Generates a brief 2-3 sentence strategic market overview for the company.
-    """
-    if not GEMINI_API_KEY:
-        return "AI Insight unavailable: GEMINI_API_KEY is not configured in your .env file."
-        
+PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "financial_prompt.txt"
+
+# Keys the prompt template expects. Kept in one place so template and code
+# can't silently drift apart.
+_CONTEXT_FIELDS = [
+    "company_name", "sector", "industry", "current_price", "market_cap",
+    "fifty_two_week_high", "fifty_two_week_low", "dividend_yield",
+    "sma", "ema", "rsi", "rsi_signal", "news_summary",
+]
+
+_FALLBACK_TEMPLATE = (
+    "You are a financial analyst. Analyze {company_name} in the {sector} "
+    "sector, {industry} industry. Current price {current_price}, market cap "
+    "{market_cap}. Technicals: SMA {sma}, EMA {ema}, RSI {rsi} ({rsi_signal}). "
+    "Recent news:\n{news_summary}\n\n"
+    "Give a 2-3 sentence insight followed by a Buy/Sell/Hold call with justification."
+)
+
+
+def _load_prompt_template() -> str:
     try:
-        # Utilizing the gemini-2.5-flash model
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        
-        prompt = f"""
-        You are an expert financial analyst. Analyze the following company profile:
-            Company: {company_name}
-            Sector: {sector}
-            Industry: {industry}
+        text = PROMPT_PATH.read_text(encoding="utf-8")
+        return text if text.strip() else _FALLBACK_TEMPLATE
+    except FileNotFoundError:
+        return _FALLBACK_TEMPLATE
 
-            CRITICAL VALIDATION STEP: 
-            If the company name is a placeholder, a generic ticker symbol, or if the sector/industry values are missing or "N/A", do not generate a fake analysis. Instead, output exactly this message: "Market insights are unavailable because a valid company profile could not be identified. Please verify the stock ticker and try again."
 
-            IF THE COMPANY IS VALID:
-            1. Provide a concise, professional 2-sentence strategic market insight highlighting its core industry positioning or a major macroeconomic theme impacting its business sector. 
-            2. Conclude with a single, distinct sentence evaluating whether current structural trends lean toward a technical 'Buy' or 'Sell/Hold' posture based purely on sector tailwinds, explicitly stating the core justification. Avoid generic filler language; keep it punchy, corporate, and tailored for investors.            
-        """
-        
-        response = model.generate_content(prompt)
+def get_ai_market_insight(context: dict) -> str:
+    """
+    Generates a strategic market insight from the FULL research context.
+
+    Args:
+        context: dict assembled by app.py. Expected keys (any missing key
+            is substituted with 'N/A' so a partial context never crashes):
+            company_name, sector, industry, current_price, market_cap,
+            fifty_two_week_high, fifty_two_week_low, dividend_yield,
+            sma, ema, rsi, rsi_signal, news_summary
+
+    Returns:
+        The model's analysis as plain text, or a user-facing explanation
+        if the key is missing or the request fails.
+    """
+    if _client is None:
+        return "AI Insight unavailable: GEMINI_API_KEY is not configured in your .env file."
+
+    template = _load_prompt_template()
+    safe_context = {field: safe_get(context, field, "N/A") for field in _CONTEXT_FIELDS}
+
+    try:
+        prompt = template.format(**safe_context)
+    except KeyError as e:
+        return f"AI Insight unavailable: prompt template references unknown field {e}."
+
+    try:
+        response = _client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
         return response.text.strip()
-        
     except Exception as e:
         return f"Could not generate AI insights at this time. (Error: {e})"
