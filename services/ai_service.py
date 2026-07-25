@@ -81,3 +81,87 @@ def get_ai_market_insight(context: dict) -> str:
         return response.text.strip()
     except Exception as e:
         return f"Could not generate AI insights at this time. (Error: {e})"
+
+
+def extract_stock_symbol(user_input: str) -> str | None:
+    """
+    Attempts to identify an Indian NSE stock symbol from user prompt.
+    Returns uppercase symbol (e.g. 'TATAMOTORS') or None if input is conversational.
+    """
+    if not user_input or not user_input.strip():
+        return None
+
+    cleaned = user_input.strip().upper()
+    # If the user typed just a single word symbol like "TATAMOTORS" or "RELIANCE.NS"
+    words = [w.strip(".,!?()[]{}") for w in cleaned.split()]
+    
+    # Common words to filter out
+    stop_words = {"ANALYZE", "CHECK", "SHOW", "WHAT", "IS", "THE", "PRICE", "OF", "STOCK", "FOR", "BUY", "SELL", "HOLD", "NEWS", "ABOUT", "HI", "HELLO", "THANKS", "THANK", "YOU", "PLEASE", "TELL", "ME", "SEARCH", "RESEARCH"}
+    
+    candidates = [w for w in words if w and w not in stop_words and len(w) >= 2]
+    
+    if len(candidates) == 1:
+        symbol = candidates[0].removesuffix(".NS")
+        if symbol.isalpha():
+            return symbol
+    elif len(words) == 1:
+        symbol = words[0].removesuffix(".NS")
+        if symbol.isalpha():
+            return symbol
+
+    return None
+
+
+def get_ai_followup_response(user_prompt: str, chat_history: list, last_stock_context: dict = None) -> str:
+    """
+    Generates a conversational AI response to a follow-up question.
+    """
+    if _client is None:
+        return "AI Assistant is unavailable: GEMINI_API_KEY is not configured in your .env file."
+
+    system_instruction = (
+        "You are an expert AI Financial Research Assistant styled like Google Gemini AI. "
+        "Provide helpful, concise, accurate, and beautifully structured responses using Markdown formatting. "
+        "Use bullet points, bold key figures, and financial insights when appropriate."
+    )
+
+    context_str = ""
+    if last_stock_context:
+        company_name = safe_get(last_stock_context, 'company_name', 'N/A')
+        sector = safe_get(last_stock_context, 'sector', 'N/A')
+        price = safe_get(last_stock_context, 'current_price', 'N/A')
+        rsi = safe_get(last_stock_context, 'rsi', 'N/A')
+        signal = safe_get(last_stock_context, 'rsi_signal', 'N/A')
+        context_str = (
+            f"\nCurrent active stock analysis context:\n"
+            f"- Company: {company_name}\n"
+            f"- Sector: {sector}\n"
+            f"- Current Price: {price}\n"
+            f"- RSI (14): {rsi} ({signal})\n"
+        )
+
+    # Format small history snippet
+    history_text = ""
+    recent_history = chat_history[-6:] if len(chat_history) > 6 else chat_history
+    for msg in recent_history:
+        role = "User" if msg.get("role") == "user" else "Assistant"
+        content = msg.get("content") or ""
+        if isinstance(content, str):
+            history_text += f"{role}: {content[:300]}\n"
+
+    full_prompt = (
+        f"{system_instruction}\n"
+        f"{context_str}\n"
+        f"Recent Conversation History:\n{history_text}\n"
+        f"User Question: {user_prompt}\n\n"
+        f"Answer directly, professionally, and concisely:"
+    )
+
+    try:
+        response = _client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=full_prompt,
+        )
+        return response.text.strip()
+    except Exception as e:
+        return f"Could not generate a response at this time. (Error: {e})"
