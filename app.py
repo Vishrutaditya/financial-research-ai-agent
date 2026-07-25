@@ -240,7 +240,7 @@ def handle_user_input(user_text: str):
 
 # Sidebar Configuration
 with st.sidebar:
-    st.markdown("## ✨ Gemini AI Assistant")
+    st.markdown("## ✨ Freaddy The Assiatant")
 
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
         st.session_state.messages = []
@@ -290,7 +290,7 @@ if not st.session_state.messages:
 
     with col_center:
         st.markdown(
-            '<div class="gemini-title">Hello, Financial Researcher</div>',
+            '<div class="gemini-title">Hello, Freaddy the finacial assistant here</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -351,7 +351,7 @@ if not st.session_state.messages:
 # State 2: Active Chat View (Continuous Conversation)
 else:
     # Top Sticky Header
-    st.markdown("### ✨ Gemini Financial Assistant")
+    st.markdown("### ✨ Freaddy The Assiatant")
     st.markdown("---")
 
     # Render message stream
