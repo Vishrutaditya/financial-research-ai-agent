@@ -1,44 +1,64 @@
+"""
+app.py
+
+Python Full-Stack Indian Stock Comparison & Fundamental Analysis Application.
+Integrates NSE/BSE data (.NS/.BO), SQLite Watchlist persistence, Fundamental Ratios
+(P/E, Debt/Equity, ROE, Growth), Sector Benchmarking, and Indian Market Hours (IST).
+"""
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from services.ai_service import (
     extract_stock_symbol,
+    get_ai_comparison_insight,
     get_ai_followup_response,
     get_ai_market_insight,
 )
 from services.calculations import add_technical_indicators, get_latest_signal
+from services.comparison import compare_stocks_fundamentals, get_normalized_comparison_history
 from services.database_service import (
     add_to_watchlist,
     get_watchlist,
     init_db,
+    is_in_watchlist,
     remove_from_watchlist,
+    update_watchlist_item,
 )
+from services.fundamental import evaluate_fundamental_health
 from services.news_service import get_company_news
+from services.sector_data import get_sector_info
 from services.sentiment_service import analyze_sentiment
 from services.stock_data import StockDataError, get_company_info, get_historical_data
-from utils.helpers import format_currency, format_percentage, summarize_news_with_sentiment
+from utils.helpers import (
+    format_inr_currency,
+    format_percentage,
+    get_indian_market_status,
+    summarize_news_with_sentiment,
+)
 
-# Page setup
+# 1. Page & Layout Setup
 st.set_page_config(
-    page_title="Gemini Financial Assistant",
-    page_icon="✨",
+    page_title="Indian Stock Comparison & Fundamentals",
+    page_icon="🇮🇳",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Initialize DB
+# 2. Initialize SQLite Database
 init_db()
 
-# Caching wrappers
+
+# 3. Caching Services
 @st.cache_data(ttl=300, show_spinner=False)
-def cached_company_info(symbol: str) -> dict:
-    return get_company_info(symbol)
+def cached_company_info(symbol: str, exchange: str = "NSE") -> dict:
+    return get_company_info(symbol, preferred_exchange=exchange)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def cached_historical_data(symbol: str, period: str = "6mo"):
-    return get_historical_data(symbol, period=period)
+def cached_historical_data(symbol: str, period: str = "6mo", exchange: str = "NSE"):
+    return get_historical_data(symbol, period=period, preferred_exchange=exchange)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -46,72 +66,61 @@ def cached_news(company_name: str):
     return get_company_news(company_name)
 
 
-# Session state initialization
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "last_stock_context" not in st.session_state:
-    st.session_state.last_stock_context = None
-
-if "history_symbols" not in st.session_state:
-    st.session_state.history_symbols = []
-
-# Inject Gemini AI modern Dark CSS
+# 4. Custom Styling (Modern Dark Financial Theme)
 st.markdown(
     """
     <style>
-    /* Dark Gemini Theme */
     .stApp {
-        background-color: #131314;
-        color: #e3e3e3;
+        background-color: #0e1117;
+        color: #e0e0e0;
     }
-    
-    /* Gemini Header Styling */
-    .gemini-title {
-        background: linear-gradient(90deg, #4285F4 0%, #9B72CB 40%, #D96570 100%);
+
+    /* Market Status Bar */
+    .market-status-bar {
+        background-color: #1a1d24;
+        border: 1px solid #2e3440;
+        border-radius: 12px;
+        padding: 10px 18px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    /* Card Containers */
+    .metric-card {
+        background-color: #1a1d24;
+        border: 1px solid #2e3440;
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+
+    .winner-highlight {
+        background-color: rgba(46, 160, 67, 0.15);
+        border: 1px solid #2ea043;
+        border-radius: 6px;
+        padding: 2px 6px;
+        color: #56d364;
+        font-weight: 600;
+    }
+
+    /* Header styling */
+    .main-header {
+        font-size: 2.2rem;
+        font-weight: 800;
+        background: linear-gradient(90deg, #ff9933 0%, #ffffff 50%, #138808 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-size: 2.8rem;
-        font-weight: 700;
-        margin-bottom: 0.3rem;
-        letter-spacing: -0.5px;
+        margin-bottom: 0px;
     }
     
-    .gemini-subtitle {
-        color: #9aa0a6;
-        font-size: 1.25rem;
-        font-weight: 400;
-        margin-bottom: 2rem;
-    }
-
-    /* Cards & Containers */
-    .gemini-card {
-        background-color: #1e1f20;
-        border: 1px solid #2e2f31;
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 16px;
-    }
-
-    .user-msg-box {
-        background-color: #282a2c;
-        border-radius: 16px;
-        padding: 14px 20px;
-        color: #e3e3e3;
-        margin-bottom: 16px;
-        border: 1px solid #3c4043;
+    .sub-header {
+        color: #8b949e;
         font-size: 1.05rem;
+        margin-bottom: 20px;
     }
 
-    .ai-insight-card {
-        background: linear-gradient(135deg, rgba(66, 133, 244, 0.08) 0%, rgba(155, 114, 203, 0.08) 100%);
-        border-left: 4px solid #4285f4;
-        border-radius: 12px;
-        padding: 18px 22px;
-        margin-top: 15px;
-    }
-
-    /* Hide standard header decoration */
     header[data-testid="stHeader"] {
         background: transparent;
     }
@@ -121,380 +130,537 @@ st.markdown(
 )
 
 
-def run_analysis(symbol_or_input: str):
-    """Processes a stock symbol query and returns a structured message object."""
-    ticker_symbol = symbol_or_input.strip().upper()
-    if not ticker_symbol.endswith(".NS") and not "." in ticker_symbol:
-        ticker_symbol += ".NS"
-
-    display_symbol = ticker_symbol.replace(".NS", "")
-
-    try:
-        company = cached_company_info(ticker_symbol)
-    except StockDataError as e:
-        return {
-            "role": "assistant",
-            "type": "error",
-            "content": f"❌ Could not analyze **{display_symbol}**: {e}",
-        }
-
-    # Fetch indicators & news
-    hist = None
-    signal = {}
-    sma_val = ema_val = None
-
-    period = st.session_state.get("selected_period", "6mo")
-
-    try:
-        hist = cached_historical_data(ticker_symbol, period=period)
-    except StockDataError:
-        pass
-
-    if hist is not None and not hist.empty:
-        hist = add_technical_indicators(hist)
-        signal = get_latest_signal(hist)
-        sma_val = hist["SMA_20"].iloc[-1]
-        ema_val = hist["EMA_20"].iloc[-1]
-
-    articles = cached_news(company.get("name") or display_symbol)
-    news_with_sentiment = []
-    if articles:
-        for article in articles:
-            title = article.get("title") or "Untitled"
-            source = (article.get("source") or {}).get("name", "Unknown source")
-            sentiment = analyze_sentiment(title)
-            news_with_sentiment.append(
-                {
-                    "title": title,
-                    "source": source,
-                    "sentiment": sentiment,
-                    "published": article.get("publishedAt", "N/A"),
-                    "url": article.get("url", "#"),
-                }
-            )
-
-    # Build context for Gemini AI
-    context = {
-        "company_name": company.get("name", display_symbol),
-        "sector": company.get("sector"),
-        "industry": company.get("industry"),
-        "current_price": company.get("current_price"),
-        "market_cap": company.get("market_cap"),
-        "fifty_two_week_high": company.get("fifty_two_week_high"),
-        "fifty_two_week_low": company.get("fifty_two_week_low"),
-        "dividend_yield": company.get("dividend_yield"),
-        "sma": None if sma_val is None or pd.isna(sma_val) else round(float(sma_val), 2),
-        "ema": None if ema_val is None or pd.isna(ema_val) else round(float(ema_val), 2),
-        "rsi": signal.get("rsi"),
-        "rsi_signal": signal.get("rsi_signal"),
-        "news_summary": summarize_news_with_sentiment(news_with_sentiment),
-    }
-
-    st.session_state.last_stock_context = context
-
-    if display_symbol not in st.session_state.history_symbols:
-        st.session_state.history_symbols.insert(0, display_symbol)
-
-    ai_insight = get_ai_market_insight(context)
-
-    return {
-        "role": "assistant",
-        "type": "stock_analysis",
-        "symbol": display_symbol,
-        "ticker_symbol": ticker_symbol,
-        "company": company,
-        "hist": hist,
-        "signal": signal,
-        "sma_val": sma_val,
-        "ema_val": ema_val,
-        "news": news_with_sentiment,
-        "ai_insight": ai_insight,
-        "context": context,
-    }
-
-
-def handle_user_input(user_text: str):
-    """Handles incoming user prompt either as stock analysis or follow-up question."""
-    if not user_text or not user_text.strip():
-        return
-
-    st.session_state.messages.append({"role": "user", "content": user_text})
-
-    symbol = extract_stock_symbol(user_text)
-
-    if symbol:
-        with st.spinner(f"✨ Gemini is analyzing {symbol}..."):
-            response_msg = run_analysis(symbol)
-            st.session_state.messages.append(response_msg)
-    else:
-        with st.spinner("✨ Gemini AI is thinking..."):
-            followup_ans = get_ai_followup_response(
-                user_prompt=user_text,
-                chat_history=st.session_state.messages,
-                last_stock_context=st.session_state.last_stock_context,
-            )
-            st.session_state.messages.append(
-                {"role": "assistant", "type": "conversational", "content": followup_ans}
-            )
-
-
-# Sidebar Configuration
+# 5. Sidebar Navigation & Global Controls
 with st.sidebar:
-    st.markdown("## ✨ Freaddy The Assiatant")
+    st.markdown("## 🇮🇳 Indian Stock Hub")
+    st.caption("NSE & BSE Real-Time Financial Suite")
 
-    if st.button("➕ New Chat", use_container_width=True, type="primary"):
-        st.session_state.messages = []
-        st.session_state.last_stock_context = None
-        st.rerun()
+    # Exchange Switcher
+    pref_exchange = st.radio(
+        "Default Exchange",
+        ["NSE (.NS)", "BSE (.BO)"],
+        index=0,
+        help="Select default exchange suffix when entering ticker symbols",
+    )
+    selected_exchange_code = "NSE" if "NSE" in pref_exchange else "BSE"
 
     st.markdown("---")
 
-    # Timeframe selector
+    # Timeframe Selector
     st.session_state.selected_period = st.selectbox(
-        "Technical Trend Period",
+        "Historical Period",
         ["1mo", "3mo", "6mo", "1yr", "2yr", "5yr"],
         index=2,
     )
 
-    st.markdown("### 📋 Watchlist")
+    st.markdown("---")
+
+    # Quick Watchlist Sidebar Section
+    st.markdown("### 📋 Quick Watchlist")
     watchlist_items = get_watchlist()
     if watchlist_items:
-        for item in watchlist_items:
+        for item in watchlist_items[:6]:
             c1, c2 = st.columns([3, 1])
             with c1:
-                if st.button(f"📈 {item['stock_symbol']}", key=f"wl_{item['id']}"):
-                    handle_user_input(f"Analyze {item['stock_symbol']}")
+                if st.button(f"📈 {item['stock_symbol']}", key=f"sb_wl_{item['id']}"):
+                    st.session_state.search_input = item["stock_symbol"]
                     st.rerun()
             with c2:
-                if st.button("🗑️", key=f"del_{item['id']}"):
+                if st.button("🗑️", key=f"sb_del_{item['id']}"):
                     remove_from_watchlist(item["stock_symbol"])
                     st.rerun()
     else:
-        st.caption("No stocks saved in watchlist yet.")
+        st.caption("Watchlist is currently empty.")
 
-    # Recent Session Symbol History
-    if st.session_state.history_symbols:
-        st.markdown("### 🕒 Recent Searches")
-        for sym in st.session_state.history_symbols[:5]:
-            if st.button(f"🔍 {sym}", key=f"hist_{sym}"):
-                handle_user_input(f"Analyze {sym}")
-                st.rerun()
-
-
-# MAIN APP UI LOGIC
-
-# State 1: Full-Page Initial Welcome Hero View
-if not st.session_state.messages:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col_left, col_center, col_right = st.columns([1, 10, 1])
-
-    with col_center:
-        st.markdown(
-            '<div class="gemini-title">Hello, Freaddy the finacial assistant here</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="gemini-subtitle">What Indian stock or financial research would you like to explore today?</div>',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Quick Suggestion Chips Grid
-        chip_col1, chip_col2 = st.columns(2)
-
-        with chip_col1:
-            if st.button(
-                "📈  Analyze TATAMOTORS\nFull fundamental, technical & news insights",
-                use_container_width=True,
-            ):
-                handle_user_input("Analyze TATAMOTORS")
-                st.rerun()
-
-            if st.button(
-                "📰  Sentiment for INFY\nLatest news headlines & AI sentiment summary",
-                use_container_width=True,
-            ):
-                handle_user_input("Analyze INFY")
-                st.rerun()
-
-        with chip_col2:
-            if st.button(
-                "⚡  Research RELIANCE\nKey price levels, SMA, EMA & RSI analysis",
-                use_container_width=True,
-            ):
-                handle_user_input("Analyze RELIANCE")
-                st.rerun()
-
-            if st.button(
-                "📊  Analyze TCS\nDividend yield, market cap & strategic outlook",
-                use_container_width=True,
-            ):
-                handle_user_input("Analyze TCS")
-                st.rerun()
-
-        st.markdown("<br><br>", unsafe_allow_html=True)
-
-        # Center Hero Input Box
-        hero_input = st.text_input(
-            "Enter Stock Symbol or ask Gemini AI...",
-            placeholder="e.g. TATAMOTORS, RELIANCE, TCS, or ask any stock question...",
-            key="hero_prompt_input",
-            label_visibility="collapsed",
-        )
-
-        if st.button("Spark Market Research ✨", use_container_width=True, type="primary"):
-            if hero_input:
-                handle_user_input(hero_input)
-                st.rerun()
-
-# State 2: Active Chat View (Continuous Conversation)
-else:
-    # Top Sticky Header
-    st.markdown("### ✨ Freaddy The Assiatant")
     st.markdown("---")
+    st.markdown("#### ⚡ Popular Indian Equities")
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        if st.button("RELIANCE", use_container_width=True):
+            st.session_state.search_input = "RELIANCE"
+            st.rerun()
+        if st.button("TATAMOTORS", use_container_width=True):
+            st.session_state.search_input = "TATAMOTORS"
+            st.rerun()
+    with col_p2:
+        if st.button("TCS", use_container_width=True):
+            st.session_state.search_input = "TCS"
+            st.rerun()
+        if st.button("HDFCBANK", use_container_width=True):
+            st.session_state.search_input = "HDFCBANK"
+            st.rerun()
 
-    # Render message stream
-    for idx, msg in enumerate(st.session_state.messages):
-        if msg["role"] == "user":
-            st.chat_message("user").write(msg["content"])
 
-        elif msg["role"] == "assistant":
-            with st.chat_message("assistant", avatar="✨"):
-                msg_type = msg.get("type", "conversational")
+# 6. Main Header & Indian Market Hours Status Banner
+m_status = get_indian_market_status()
 
-                if msg_type == "error":
-                    st.error(msg["content"])
+st.markdown('<div class="main-header">Indian Stock Comparison & Analytics</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="sub-header">Comprehensive Fundamental Ratios, Sector Peer Benchmarking & SQLite Watchlists</div>',
+    unsafe_allow_html=True,
+)
 
-                elif msg_type == "conversational":
-                    st.markdown(msg["content"])
+# Market Hours Banner
+c_st1, c_st2, c_st3 = st.columns([2, 2, 2])
+with c_st1:
+    st.info(f"{m_status['badge_color']} **Market Status:** {m_status['status']}")
+with c_st2:
+    st.info(f"🕒 **Current IST:** {m_status['current_time']}")
+with c_st3:
+    st.info(f"⏳ **Schedule:** {m_status['next_event']}")
 
-                elif msg_type == "stock_analysis":
-                    symbol = msg["symbol"]
-                    company = msg["company"]
-                    hist = msg.get("hist")
-                    signal = msg.get("signal", {})
-                    news = msg.get("news", [])
-                    ai_insight = msg.get("ai_insight", "")
+st.markdown("---")
 
-                    # Watchlist Toggle Button
-                    top_c1, top_c2 = st.columns([4, 1])
-                    with top_c1:
-                        st.markdown(f"## 🏢 {company.get('name', symbol)} ({symbol})")
-                    with top_c2:
-                        current_wl = [w["stock_symbol"] for w in get_watchlist()]
-                        if symbol in current_wl:
-                            if st.button("⭐ Saved", key=f"wl_btn_{idx}"):
-                                remove_from_watchlist(symbol)
-                                st.rerun()
-                        else:
-                            if st.button("☆ Add Watchlist", key=f"wl_btn_{idx}"):
-                                add_to_watchlist(company.get("name", symbol), symbol)
-                                st.rerun()
 
-                    # Corporate Profile Metrics
-                    m1, m2, m3, m4, m5 = st.columns(5)
-                    m1.metric("Current Price", format_currency(company.get("current_price")))
-                    m2.metric("52W High", format_currency(company.get("fifty_two_week_high")))
-                    m3.metric("52W Low", format_currency(company.get("fifty_two_week_low")))
-                    m4.metric("Market Cap", format_currency(company.get("market_cap")))
-                    m5.metric("Dividend Yield", format_percentage(company.get("dividend_yield")))
+# 7. Main Multi-Tab Interface
+tab_research, tab_compare, tab_sector, tab_watchlist = st.tabs(
+    [
+        "📊 Stock Fundamentals & Research",
+        "⚖️ Multi-Stock Comparison Engine",
+        "🏬 Sector Benchmark & Industry",
+        "📋 Watchlist Database",
+    ]
+)
 
-                    st.markdown(
-                        f"**Sector:** `{company.get('sector', 'N/A')}` | "
-                        f"**Industry:** `{company.get('industry', 'N/A')}` | "
-                        f"🔗 [Company Website]({company.get('website', '#')})"
-                    )
 
-                    st.markdown("---")
-
-                    # Technical Indicators & Plotly Chart
-                    st.markdown("### 📈 Technical Snapshot & Price Trend")
-                    if hist is not None and not hist.empty:
-                        sma_val = msg.get("sma_val")
-                        ema_val = msg.get("ema_val")
-
-                        t1, t2, t3 = st.columns(3)
-                        t1.metric("SMA (20)", "N/A" if pd.isna(sma_val) else f"₹{sma_val:.2f}")
-                        t2.metric("EMA (20)", "N/A" if pd.isna(ema_val) else f"₹{ema_val:.2f}")
-                        t3.metric(
-                            "RSI (14)",
-                            signal.get("rsi", "N/A"),
-                            delta=signal.get("rsi_signal", ""),
-                        )
-
-                        fig = go.Figure()
-                        fig.add_trace(
-                            go.Scatter(
-                                x=hist.index,
-                                y=hist["Close"],
-                                name="Close Price",
-                                line=dict(color="#4285F4", width=2.5),
-                            )
-                        )
-                        if "SMA_20" in hist.columns:
-                            fig.add_trace(
-                                go.Scatter(
-                                    x=hist.index,
-                                    y=hist["SMA_20"],
-                                    name="SMA (20)",
-                                    line=dict(color="#FFB347", width=1.5, dash="dash"),
-                                )
-                            )
-                        if "EMA_20" in hist.columns:
-                            fig.add_trace(
-                                go.Scatter(
-                                    x=hist.index,
-                                    y=hist["EMA_20"],
-                                    name="EMA (20)",
-                                    line=dict(color="#9B72CB", width=1.5, dash="dot"),
-                                )
-                            )
-
-                        fig.update_layout(
-                            title=f"{symbol} Historical Price Trend ({st.session_state.get('selected_period', '6mo')})",
-                            xaxis_title="Date",
-                            yaxis_title="Price (INR)",
-                            template="plotly_dark",
-                            margin=dict(l=20, r=20, t=40, b=20),
-                            height=380,
-                            paper_bgcolor="rgba(0,0,0,0)",
-                            plot_bgcolor="rgba(0,0,0,0)",
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("No historical pricing data available.")
-
-                    st.markdown("---")
-
-                    # News Feed Section
-                    st.markdown("### 📰 News & Sentiment Analysis")
-                    if news:
-                        for n in news[:3]:
-                            st.write(
-                                f"• **{n['title']}** "
-                                f"| *{n['source']}* "
-                                f"| `{n['sentiment']}` "
-                                f"| [Read Article]({n['url']})"
-                            )
-                    else:
-                        st.caption("No recent news found.")
-
-                    # Gemini GenAI Market Insight Callout Box
-                    st.markdown(
-                        f"""
-                        <div class="ai-insight-card">
-                            <h4 style="margin-top:0; color:#4285f4;">✨ Gemini GenAI Strategic Market Insight</h4>
-                            <p style="font-size: 1.05rem; line-height: 1.6;">{ai_insight}</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-    # Continuous Chat Input at the end of responses
-    prompt_input = st.chat_input(
-        "Ask Gemini follow-up questions (e.g. 'What is the RSI outlook?') or enter another symbol (e.g. TATAMOTORS)..."
+# ==============================================================================
+# TAB 1: SINGLE STOCK FUNDAMENTALS & RESEARCH
+# ==============================================================================
+with tab_research:
+    search_query = st.text_input(
+        "Search Indian Stock Symbol (e.g. TATAMOTORS, RELIANCE, TCS, INFY, 500325.BO):",
+        value=st.session_state.get("search_input", "TATAMOTORS"),
+        key="main_stock_search",
     )
-    if prompt_input:
-        handle_user_input(prompt_input)
-        st.rerun()
+
+    if search_query:
+        symbol = extract_stock_symbol(search_query) or search_query
+        
+        try:
+            with st.spinner(f"Fetching financial data for {symbol}..."):
+                company = cached_company_info(symbol, exchange=selected_exchange_code)
+                health = evaluate_fundamental_health(company)
+                clean_sym = company["ticker_symbol"]
+                
+                hist = cached_historical_data(
+                    clean_sym,
+                    period=st.session_state.get("selected_period", "6mo"),
+                    exchange=selected_exchange_code,
+                )
+
+            # Stock Header Row with Watchlist Button
+            col_h1, col_h2 = st.columns([4, 1])
+            with col_h1:
+                st.markdown(
+                    f"## 🏢 {company['name']} ({company['symbol']}) "
+                    f"`{company['exchange']}`"
+                )
+                st.caption(
+                    f"**Sector:** {company['sector']} | "
+                    f"**Industry:** {company['industry']} | "
+                    f"🌐 [Company Website]({company['website']})"
+                )
+            with col_h2:
+                in_wl = is_in_watchlist(clean_sym)
+                if in_wl:
+                    if st.button("⭐ Saved in Watchlist", key="btn_wl_toggle", type="secondary"):
+                        remove_from_watchlist(clean_sym)
+                        st.success(f"Removed {clean_sym} from Watchlist!")
+                        st.rerun()
+                else:
+                    if st.button("☆ Add to Watchlist", key="btn_wl_toggle", type="primary"):
+                        add_to_watchlist(
+                            company_name=company["name"],
+                            stock_symbol=clean_sym,
+                            exchange=company["exchange"],
+                            sector=company["sector"],
+                            added_price=company["current_price"],
+                        )
+                        st.success(f"Added {clean_sym} to SQLite Watchlist!")
+                        st.rerun()
+
+            st.markdown("---")
+
+            # Fundamental Summary Metrics Cards
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Current Price", format_inr_currency(company["current_price"]))
+            m2.metric("Market Cap", format_inr_currency(company["market_cap"], is_market_cap=True))
+            m3.metric("Trailing P/E", f"{company['pe_ratio']:.2f}" if company['pe_ratio'] else "N/A")
+            m4.metric("Debt to Equity", f"{company['debt_to_equity']:.2f}" if company['debt_to_equity'] is not None else "N/A")
+            m5.metric("ROE", format_percentage(company["roe"]))
+
+            # Fundamental Health Scorecard Banner
+            st.markdown("### 🛡️ Fundamental Health Scorecard")
+            sc_col1, sc_col2 = st.columns([1, 2])
+            with sc_col1:
+                st.markdown(
+                    f"""
+                    <div class="metric-card" style="text-align:center;">
+                        <h4 style="margin:0;">Health Rating</h4>
+                        <h1 style="margin:10px 0; font-size:2.8rem;">{health['rating_color']} {health['score']}/100</h1>
+                        <p style="margin:0; font-weight:bold;">{health['rating']}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with sc_col2:
+                st.markdown("##### Key Ratio Health Badges:")
+                st.write(f"- **Debt Level:** {health['de_badge'][0]}")
+                st.write(f"- **Valuation (P/E):** {health['pe_badge'][0]}")
+                st.write(f"- **Profitability (ROE):** {health['roe_badge'][0]}")
+                st.write(f"- **Revenue Growth:** {health['growth_badge'][0]}")
+
+            st.markdown("---")
+
+            # Fundamental Ratios Deep-Dive Grid
+            st.markdown("### 📐 Comprehensive Fundamental Analysis")
+            f_col1, f_col2, f_col3 = st.columns(3)
+
+            with f_col1:
+                st.markdown("#### 💎 Valuation Metrics")
+                st.write(f"• **Trailing P/E:** {company['pe_ratio'] or 'N/A'}")
+                st.write(f"• **Forward P/E:** {company['forward_pe'] or 'N/A'}")
+                st.write(f"• **Price to Book (P/B):** {company['pb_ratio'] or 'N/A'}")
+                st.write(f"• **PEG Ratio:** {company['peg_ratio'] or 'N/A'}")
+                st.write(f"• **EV / EBITDA:** {company['ev_to_ebitda'] or 'N/A'}")
+                st.write(f"• **Dividend Yield:** {format_percentage(company['dividend_yield'])}")
+
+            with f_col2:
+                st.markdown("#### 🏥 Debt & Balance Sheet")
+                st.write(f"• **Debt to Equity:** {company['debt_to_equity'] if company['debt_to_equity'] is not None else 'N/A'}")
+                st.write(f"• **Current Ratio:** {company['current_ratio'] or 'N/A'}")
+                st.write(f"• **Quick Ratio:** {company['quick_ratio'] or 'N/A'}")
+                st.write(f"• **Total Debt:** {format_inr_currency(company['total_debt'], is_market_cap=True)}")
+                st.write(f"• **Total Cash:** {format_inr_currency(company['total_cash'], is_market_cap=True)}")
+                st.write(f"• **Book Value / Share:** ₹{company['book_value'] or 'N/A'}")
+
+            with f_col3:
+                st.markdown("#### 📈 Growth & Profitability")
+                st.write(f"• **Return on Equity (ROE):** {format_percentage(company['roe'])}")
+                st.write(f"• **Return on Assets (ROA):** {format_percentage(company['roa'])}")
+                st.write(f"• **Revenue Growth (YoY):** {format_percentage(company['revenue_growth'])}")
+                st.write(f"• **Earnings Growth (YoY):** {format_percentage(company['earnings_growth'])}")
+                st.write(f"• **Operating Margin:** {format_percentage(company['operating_margin'])}")
+                st.write(f"• **Net Profit Margin:** {format_percentage(company['profit_margin'])}")
+
+            st.markdown("---")
+
+            # Technical Trend & Plotly Price Chart
+            st.markdown("### 📈 Price Performance & Technical Indicators")
+            if hist is not None and not hist.empty:
+                hist = add_technical_indicators(hist)
+                signal = get_latest_signal(hist)
+
+                t1, t2, t3 = st.columns(3)
+                sma_v = hist['SMA_20'].iloc[-1]
+                ema_v = hist['EMA_20'].iloc[-1]
+                t1.metric("SMA (20)", f"₹{sma_v:.2f}" if pd.notna(sma_v) else "N/A")
+                t2.metric("EMA (20)", f"₹{ema_v:.2f}" if pd.notna(ema_v) else "N/A")
+                t3.metric("RSI (14)", signal.get("rsi", "N/A"), delta=signal.get("rsi_signal", ""))
+
+                # Plotly Price Chart
+                fig = go.Figure()
+                fig.add_trace(
+                    go.Scatter(
+                        x=hist.index,
+                        y=hist["Close"],
+                        name="Close Price",
+                        line=dict(color="#4285F4", width=2.5),
+                    )
+                )
+                if "SMA_20" in hist.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=hist.index,
+                            y=hist["SMA_20"],
+                            name="SMA 20",
+                            line=dict(color="#FFB347", width=1.5, dash="dash"),
+                        )
+                    )
+                if "EMA_20" in hist.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=hist.index,
+                            y=hist["EMA_20"],
+                            name="EMA 20",
+                            line=dict(color="#9B72CB", width=1.5, dash="dot"),
+                        )
+                    )
+
+                fig.update_layout(
+                    title=f"{company['symbol']} Price History (INR)",
+                    xaxis_title="Date",
+                    yaxis_title="Price (₹)",
+                    template="plotly_dark",
+                    height=380,
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("---")
+
+            # Gemini AI Strategic Analysis Callout
+            st.markdown("### ✨ Gemini Financial Analyst Insights")
+            context = {
+                "company_name": company["name"],
+                "sector": company["sector"],
+                "industry": company["industry"],
+                "current_price": company["current_price"],
+                "market_cap": company["market_cap"],
+                "dividend_yield": company["dividend_yield"],
+                "news_summary": "Latest market information",
+            }
+            ai_insight = get_ai_market_insight(context)
+            st.info(ai_insight)
+
+        except StockDataError as e:
+            st.error(f"❌ Could not retrieve stock details: {e}")
+
+
+# ==============================================================================
+# TAB 2: MULTI-STOCK COMPARISON ENGINE
+# ==============================================================================
+with tab_compare:
+    st.markdown("### ⚖️ Side-by-Side Stock Comparison Engine")
+    st.caption("Compare fundamentals, debt ratios, valuation metrics, and price growth across up to 5 Indian stocks.")
+
+    c_top1, c_top2 = st.columns([3, 1])
+    with c_top1:
+        comp_input = st.text_input(
+            "Enter stock symbols separated by comma (e.g., RELIANCE, TCS, INFY, TATAMOTORS, MARUTI):",
+            value="TATAMOTORS, MARUTI, M&M",
+            key="comp_symbols_input",
+        )
+    with c_top2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("📋 Compare Saved Watchlist", use_container_width=True, type="secondary"):
+            wl = get_watchlist()
+            if wl:
+                comp_input = ", ".join([w["stock_symbol"] for w in wl[:5]])
+                st.session_state.comp_symbols_input = comp_input
+                st.rerun()
+            else:
+                st.warning("Watchlist is currently empty.")
+
+    if comp_input:
+        raw_symbols = [s.strip() for s in comp_input.split(",") if s.strip()]
+        
+        if len(raw_symbols) < 2:
+            st.warning("Please enter at least 2 stock symbols to compare.")
+        else:
+            with st.spinner("Fetching comparison data across Indian markets..."):
+                stock_data_list, winners = compare_stocks_fundamentals(
+                    raw_symbols, preferred_exchange=selected_exchange_code
+                )
+
+            if stock_data_list:
+                # 1. Comparative Metrics Matrix Table
+                st.markdown("#### 📊 Comparative Fundamental Metrics Matrix")
+                
+                rows = []
+                for s in stock_data_list:
+                    sym = s["symbol"]
+
+                    def win_mark(metric_key, formatted_val):
+                        if winners.get(metric_key) == sym:
+                            return f"🏆 {formatted_val}"
+                        return str(formatted_val)
+
+                    rows.append(
+                        {
+                            "Stock / Ticker": f"{s['name']} ({sym})",
+                            "Exchange": s["exchange"],
+                            "Price (₹)": format_inr_currency(s["current_price"]),
+                            "Market Cap": format_inr_currency(s["market_cap"], is_market_cap=True),
+                            "Health Score": win_mark("health_score", f"{s['health']['score']}/100"),
+                            "P/E Ratio": win_mark("pe_ratio", f"{s['pe_ratio']:.2f}" if s['pe_ratio'] else "N/A"),
+                            "Debt / Equity": win_mark("debt_to_equity", f"{s['debt_to_equity']:.2f}" if s['debt_to_equity'] is not None else "N/A"),
+                            "ROE": win_mark("roe", format_percentage(s["roe"])),
+                            "Rev Growth": win_mark("revenue_growth", format_percentage(s["revenue_growth"])),
+                            "Div Yield": win_mark("dividend_yield", format_percentage(s["dividend_yield"])),
+                        }
+                    )
+
+                df_matrix = pd.DataFrame(rows)
+                st.dataframe(df_matrix, use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+
+                # 2. Normalized Performance Overlay Chart
+                st.markdown("#### 📈 Normalized % Price Performance Comparison")
+                st.caption("Normalized to 0% base at start of period for direct growth comparison.")
+
+                norm_df = get_normalized_comparison_history(
+                    [s["ticker_symbol"] for s in stock_data_list],
+                    period=st.session_state.get("selected_period", "6mo"),
+                    preferred_exchange=selected_exchange_code,
+                )
+
+                if not norm_df.empty:
+                    fig_norm = go.Figure()
+                    for col in norm_df.columns:
+                        fig_norm.add_trace(
+                            go.Scatter(
+                                x=norm_df.index,
+                                y=norm_df[col],
+                                name=col,
+                                mode="lines",
+                                line=dict(width=2.5),
+                            )
+                        )
+                    fig_norm.update_layout(
+                        title=f"Relative Performance Comparison (% Return)",
+                        xaxis_title="Date",
+                        yaxis_title="Percentage Change (%)",
+                        template="plotly_dark",
+                        height=420,
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                    )
+                    st.plotly_chart(fig_norm, use_container_width=True)
+
+                st.markdown("---")
+
+                # 3. Bar Chart Comparison of Fundamental Ratios
+                st.markdown("#### 📊 Comparative Fundamental Ratios Breakdown")
+                
+                chart_symbols = [s["symbol"] for s in stock_data_list]
+                chart_pe = [s.get("pe_ratio") or 0 for s in stock_data_list]
+                chart_de = [s.get("debt_to_equity") or 0 for s in stock_data_list]
+                chart_roe = [(s.get("roe") or 0) * 100 for s in stock_data_list]
+
+                bc1, bc2 = st.columns(2)
+                with bc1:
+                    fig_pe = go.Figure(
+                        data=[go.Bar(x=chart_symbols, y=chart_pe, marker_color="#4285F4")]
+                    )
+                    fig_pe.update_layout(
+                        title="Trailing P/E Ratio (Lower = Cheaper)",
+                        template="plotly_dark",
+                        height=300,
+                    )
+                    st.plotly_chart(fig_pe, use_container_width=True)
+
+                with bc2:
+                    fig_de = go.Figure(
+                        data=[go.Bar(x=chart_symbols, y=chart_de, marker_color="#EA4335")]
+                    )
+                    fig_de.update_layout(
+                        title="Debt to Equity Ratio (Lower = Safer)",
+                        template="plotly_dark",
+                        height=300,
+                    )
+                    st.plotly_chart(fig_de, use_container_width=True)
+
+                st.markdown("---")
+
+                # 4. AI Comparative Verdict
+                st.markdown("### ✨ Gemini AI Comparative Synthesis")
+                ai_comp_insight = get_ai_comparison_insight(stock_data_list)
+                st.info(ai_comp_insight)
+
+
+# ==============================================================================
+# TAB 3: SECTOR BENCHMARK & INDUSTRY
+# ==============================================================================
+with tab_sector:
+    st.markdown("### 🏬 Indian Market Sector Benchmarks")
+    st.caption("Compare stock performance against Indian Industry Sectors and Sector Peers.")
+
+    sector_choice = st.selectbox(
+        "Select Indian Industry Sector:",
+        [
+            "Technology",
+            "Financial Services",
+            "Automobile",
+            "Energy",
+            "Consumer Goods",
+            "Healthcare",
+            "Basic Materials",
+        ],
+    )
+
+    sec_info = get_sector_info(sector_choice)
+    st.markdown(f"#### 🎯 Sector Benchmark Index: `{sec_info['index_name']}` ({sec_info['index_symbol']})")
+
+    st.markdown("##### Key Sector Peer Equities:")
+    peer_symbols = [p["symbol"] for p in sec_info["peers"]]
+
+    with st.spinner("Fetching sector peer fundamentals..."):
+        peer_data_list, peer_winners = compare_stocks_fundamentals(peer_symbols)
+
+    if peer_data_list:
+        peer_rows = []
+        for p in peer_data_list:
+            peer_rows.append(
+                {
+                    "Peer Company": p["name"],
+                    "Ticker": p["symbol"],
+                    "Current Price": format_inr_currency(p["current_price"]),
+                    "Market Cap": format_inr_currency(p["market_cap"], is_market_cap=True),
+                    "Health Score": f"{p['health']['score']}/100",
+                    "P/E Ratio": f"{p['pe_ratio']:.2f}" if p['pe_ratio'] else "N/A",
+                    "Debt / Equity": f"{p['debt_to_equity']:.2f}" if p['debt_to_equity'] is not None else "N/A",
+                    "ROE": format_percentage(p["roe"]),
+                }
+            )
+        st.dataframe(pd.DataFrame(peer_rows), use_container_width=True, hide_index=True)
+
+
+# ==============================================================================
+# TAB 4: WATCHLIST DATABASE
+# ==============================================================================
+with tab_watchlist:
+    st.markdown("### 📋 SQLite Saved Watchlists")
+    st.caption("Persistent local SQLite database storing your tracked Indian equities and price logs.")
+
+    wl_data = get_watchlist()
+
+    if not wl_data:
+        st.info("No stocks saved in your SQLite watchlist yet. Search for a stock in Tab 1 and click 'Add to Watchlist'!")
+    else:
+        # Table View of Saved Items
+        st.markdown("#### Saved Equities Portfolio Track:")
+        
+        wl_table_rows = []
+        for item in wl_data:
+            wl_table_rows.append(
+                {
+                    "ID": item["id"],
+                    "Symbol": item["stock_symbol"],
+                    "Company Name": item["company_name"],
+                    "Exchange": item["exchange"],
+                    "Sector": item["sector"],
+                    "Price Added": format_inr_currency(item["added_price"]),
+                    "Added On": item["created_at"],
+                }
+            )
+
+        st.dataframe(pd.DataFrame(wl_table_rows), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        st.markdown("#### Manage Watchlist Items:")
+        for item in wl_data:
+            wc1, wc2, wc3 = st.columns([3, 2, 1])
+            with wc1:
+                st.write(f"**{item['company_name']}** ({item['stock_symbol']})")
+            with wc2:
+                notes_val = st.text_input(
+                    "Target / Notes:",
+                    value=item.get("notes") or "",
+                    key=f"note_in_{item['id']}",
+                    label_visibility="collapsed",
+                    placeholder="Add target price or personal note...",
+                )
+                if st.button("Save Note", key=f"btn_note_save_{item['id']}"):
+                    update_watchlist_item(item["stock_symbol"], notes=notes_val)
+                    st.success("Updated note!")
+                    st.rerun()
+            with wc3:
+                if st.button("🗑️ Remove", key=f"wl_page_del_{item['id']}", type="secondary"):
+                    remove_from_watchlist(item["stock_symbol"])
+                    st.success(f"Removed {item['stock_symbol']}!")
+                    st.rerun()

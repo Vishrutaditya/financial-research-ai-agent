@@ -1,0 +1,6 @@
+{
+  "name": "Indian Stock Comparison & Fundamentals",
+  "description": "Indian equity fundamental analysis, side-by-side comparison engine, sector benchmarking, and SQLite watchlist manager.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
