@@ -1,6 +1,6 @@
 ## Team Members
 
-Team Leader: Vishrutaditya Joshi
-Team Member: Bhargav Raval
-Team member: Meet Patel
-Team member: Parth Patel
+- **Team Leader:** Vishrutatidya Joshi
+- **Team Member:** Bhargav Raval
+- **Team Member:** Meet Patel
+- **Team Member:** Parth Patel
