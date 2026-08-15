@@ -469,11 +469,11 @@ else:
                         st.download_button("📥 Export PDF", data=pdf_bytes, file_name=f"{symbol}_Report.pdf", mime="application/pdf", key=f"pdf_{idx}", use_container_width=True, type="primary")
                     with t3:
                         if symbol in [w["stock_symbol"] for w in get_watchlist()]:
-                            if st.button("⭐ Saved", key=f"wl_{idx}", use_container_width=True):
+                            if st.button("⭐ Saved", key=f"wl_saved_{idx}_{symbol}", use_container_width=True):
                                 remove_from_watchlist(symbol)
                                 st.rerun()
                         else:
-                            if st.button("☆ Save Watchlist", key=f"wl_{idx}", use_container_width=True):
+                            if st.button("☆ Save Watchlist", key=f"wl_save_{idx}_{symbol}", use_container_width=True):
                                 add_to_watchlist(company.get("name", symbol), symbol)
                                 st.rerun()
 

@@ -13,3 +13,6 @@ __pycache__/
 
 # SQLite database
 *.db
+
+# Chat history
+chat_history_data/
