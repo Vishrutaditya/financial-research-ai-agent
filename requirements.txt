@@ -6,3 +6,5 @@ google-generativeai
 langchain
 newsapi-python
 vaderSentiment
+fastapi
+uvicorn[standard]
