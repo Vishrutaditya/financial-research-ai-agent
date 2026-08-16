@@ -1,0 +1,10 @@
+{
+  "name": "indian-stock-comparison-python",
+  "version": "1.0.0",
+  "description": "Python Full-Stack Indian Stock Comparison App",
+  "scripts": {
+    "build": "python3 -m py_compile app.py services/*.py utils/*.py",
+    "dev": "/usr/local/bin/streamlit run app.py --server.port 3000 --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false --server.enableWebsocketCompression false",
+    "start": "/usr/local/bin/streamlit run app.py --server.port 3000 --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false --server.enableWebsocketCompression false"
+  }
+}

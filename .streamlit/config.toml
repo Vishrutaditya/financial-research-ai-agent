@@ -1,0 +1,11 @@
+[server]
+port = 3000
+address = "0.0.0.0"
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+enableWebsocketCompression = false
+allowRunOnSave = false
+
+[browser]
+gatherUsageStats = false
