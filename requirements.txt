@@ -13,3 +13,4 @@ newsapi-python
 reportlab
 fastapi
 uvicorn
+fpdf2
