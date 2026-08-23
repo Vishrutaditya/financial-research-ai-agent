@@ -10,3 +10,6 @@ vaderSentiment
 beautifulsoup4
 python-dotenv
 newsapi-python
+reportlab
+fastapi
+uvicorn
